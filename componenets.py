@@ -4,7 +4,16 @@
 
 import math
 import copy
+import pickle
 import numpy as np
+
+def load_model(target_model_path):
+    """
+    Загрузка модели
+    """
+    with open(target_model_path, 'rb') as handle:
+        model = pickle.load(handle)
+    return model
 
 def feature_map_reshape(feature_map, kernel_shape, strides_shape):
     """
@@ -55,7 +64,10 @@ class Sequential():
     Модель Sequential
     """
 
-    layers = [] # слои
+    layers: list # слои
+
+    def __init__(self):
+        self.layers = []
 
     def add(self, layer):
         """
@@ -67,6 +79,7 @@ class Sequential():
         """
         Инференс модели
         """
+        output_data = []
         for _, layer in enumerate(self.layers):
             output_data = layer(input_data)
             input_data = output_data
@@ -112,15 +125,15 @@ class Layer():
     Кастомный слой
     """
 
-    activations = Activations()
-    activation = None
-    weights = None
-    biases = None
-
     def __init__(self, **kwargs):
         """
         Инициализация слоя
         """
+        self.activations = Activations()
+        self.activation = None
+        self.weights = None
+        self.biases = None
+
         if 'activation' in kwargs:
             assert isinstance(kwargs['activation'], str)
             if kwargs['activation'] in dir(self.activations):
@@ -132,6 +145,8 @@ class Layer():
             self.set_weights(kwargs['weights'][0])
             if len(kwargs['weights']) > 1:
                 self.set_biases(kwargs['weights'][1])
+            else:
+                self.biases = np.zeros(shape=(self.weights.shape[-1],))
 
     def set_weights(self, weights):
         """
@@ -156,13 +171,11 @@ class Layer():
             model_params.append(copy.deepcopy(self.biases))
         return model_params
 
-    @staticmethod
-    def matmul(inputs, weights):
+    def matmul(self, inputs):
         """
         Матричное умножение (можно переопределять)
         """
-        # print(inputs.shape, weights[0].shape, weights[1].shape)
-        return inputs @ weights[0] + weights[1]
+        return inputs @ self.weights + self.biases
 
 class Dense(Layer):
     """
@@ -177,16 +190,8 @@ class Dense(Layer):
         input_data.shape = (c, a)
         output_data.shape = (c, b)
         """
-        # получаем матрицу весов
-        weights = self.get_weights()[0]
-        # получаем пороги (если они есть)
-        if len(self.get_weights()) > 1:
-            biases = self.get_weights()[1]
-        else:
-            biases = np.zeros(shape=(weights.shape[1],))
-            # print(biases)
         # выход слоя
-        output_data = self.matmul(input_data, [weights, biases])
+        output_data = self.matmul(input_data)
         output_data = self.activation(output_data)
         return output_data
 
@@ -195,13 +200,16 @@ class Conv2D(Layer):
     Сверточный слой
     """
 
-    strides = None
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.strides = None
+        self.kernel_shape = None
         if 'strides' in kwargs:
             assert isinstance(kwargs['strides'], tuple)
             self.strides = kwargs['strides']
+        if not self.weights is None:
+            self.kernel_shape = self.weights.shape
+            self.weights = self.weights.reshape(-1, self.weights.shape[3])
 
     def __call__(self, input_data):
         """
@@ -219,25 +227,18 @@ class Conv2D(Layer):
         i - math.ceil(f/a)
         j - math.ceil(g/b)
         """
-        # получаем матрицу весов
-        kernels = self.get_weights()[0]
-        # получаем пороги (если они есть)
-        if len(self.get_weights()) > 1:
-            biases = self.get_weights()[1]
-        else:
-            biases = np.zeros(shape=(kernels.shape[3],))
-            # print(biases)
         # модернизируем вход
-        crop, sc_x, sc_y = feature_map_reshape(input_data, kernels.shape, self.strides)
+        crop, sc_x, sc_y = feature_map_reshape(input_data, self.kernel_shape, self.strides)
         # выход слоя
         output_data = []
         for img_item in crop:
-            for item in img_item:
-                for i in range(kernels.shape[3]): # цикл по сверткам
-                    kernel = kernels[:,:,:,i]
-                    out = self.matmul(item, [kernel.flatten(), biases[i]])
-                    output_data.append(out)
-        output_data = np.array(output_data).reshape((len(crop), sc_x, sc_y, kernels.shape[3]))
+            # for item in img_item:
+            #     for i in range(kernels.shape[3]): # цикл по сверткам
+            #         kernel = kernels[:,:,:,i]
+            #         out = self.matmul(item, [kernel.flatten(), biases[i]])
+            #         output_data.append(out)
+            output_data.append(self.matmul(img_item))
+        output_data = np.array(output_data).reshape((len(crop), sc_x, sc_y, self.kernel_shape[3]))
         output_data = self.activation(output_data)
         return output_data
 
