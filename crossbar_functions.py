@@ -143,7 +143,7 @@ class HardCore(Application):
         """
         Умножение
         """
-        input_mem = np.round(abs(x)/scale_x*self.vol_read*2**self.dac_bit/self.vol_ref_dac)
+        input_mem = int(np.round(abs(x)/scale_x*self.vol_read*2**self.dac_bit/self.vol_ref_dac))
         adc = self.conn.mode_9(input_mem, 0, wl, bl)[0]
         mul = a2v(self.gain,
                   self.adc_bit,
