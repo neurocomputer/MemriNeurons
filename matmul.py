@@ -19,7 +19,7 @@ class ElementWiseMatMul():
     outputs = core.matmul(inputs)
     """
 
-    def __init__(self, device):
+    def __init__(self, device, model_path):
         """
         device - устройство у которого есть методы
         multiply - умножение 2 чисел (x, scale_x, sign_x, scale_w, sign_w, wl, bl)
@@ -29,6 +29,7 @@ class ElementWiseMatMul():
         self.mem_weights_coordinates = []
         self.mem_weights_scales = []
         self.layer_weights = []
+        self.model_path = model_path
 
     def find_weights_model(self, layer_weights, max_weight, save_folder='', print_flag=True, layer_id=''):
         """
@@ -96,29 +97,29 @@ class ElementWiseMatMul():
         out_type=model - вернет модельные результаты, иначе с мемристоров
         """
 
-        # создаем папку для сохранения результата
-        # now = datetime.datetime.now()
-        # formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
-        # result_dir = os.path.join(self.model_path, f'experiment_{formatted_date}')
-        # os.mkdir(result_dir)
+        #создаем папку для сохранения результата
+        now = datetime.datetime.now()
+        formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
+        result_dir = os.path.join(self.model_path, f'experiment_{formatted_date}')
+        os.mkdir(result_dir)
 
-        # создаем файл для сохранения результата умножения
-        # now = datetime.datetime.now()
-        # formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
-        # fname_mac_result = os.path.join(result_dir, f'mac_{formatted_date}.csv')
-        # with open(fname_mac_result,'w', newline='', encoding='utf-8') as file:
-        #     file_wr = csv.writer(file, delimiter=",")
-        #     file_wr.writerow(['neur', 'syn', 'wl', 'bl', 'dac', 'adc', 'res', 'truth'])
+        #создаем файл для сохранения результата умножения
+        now = datetime.datetime.now()
+        formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
+        fname_mac_result = os.path.join(result_dir, f'mac_{formatted_date}.csv')
+        with open(fname_mac_result,'w', newline='', encoding='utf-8') as file:
+            file_wr = csv.writer(file, delimiter=",")
+            file_wr.writerow(['timestemp','neur', 'syn', 'wl', 'bl', 'dac', 'adc', 'res', 'truth'])
 
-        # создаем файл для сохранения результата общего
-        # now = datetime.datetime.now()
-        # formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
-        # fname_io_result = os.path.join(result_dir, f'IO_{formatted_date}.csv')
-        # with open(fname_io_result,'w', newline='', encoding='utf-8') as file:
-        #     file_wr = csv.writer(file, delimiter=",")
-        #     file_wr.writerow(['datestamp', 'outputs', 'outputs_mem'])
+        #создаем файл для сохранения результата общего
+        now = datetime.datetime.now()
+        formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
+        fname_io_result = os.path.join(result_dir, f'IO_{formatted_date}.csv')
+        with open(fname_io_result,'w', newline='', encoding='utf-8') as file:
+            file_wr = csv.writer(file, delimiter=",")
+            file_wr.writerow(['datestamp', 'outputs', 'outputs_mem'])
 
-        # result_log = []
+        result_log = []
 
         counter_params = 0
         layer_weights = self.layer_weights[counter_params]
@@ -134,12 +135,12 @@ class ElementWiseMatMul():
 
         # start_time = time.time()
         for inputs in input_data:
-            # now = datetime.datetime.now()
-            # formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
-            # result_log.append(formatted_date)
+            now = datetime.datetime.now()
+            formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
+            result_log.append(formatted_date)
             scale_x = np.max(np.abs(inputs))
-            # inputs_mem = inputs
-            # inputs_mem = list(map(lambda x: np.round(abs(x)/scale_x*0.3*4096/5), inputs_mem))
+            inputs_mem = inputs
+            inputs_mem = list(map(lambda x: np.round(abs(x)/scale_x*0.3*4096/5), inputs_mem))
             neurons_model = []
             neurons_mem = []
             # нейроны
@@ -157,7 +158,7 @@ class ElementWiseMatMul():
                         # start_time = time.time()
                         sign_w = np.sign(layer_weights[synapse][neuron])
                         sign_x = np.sign(inputs[synapse])
-                        mul_res = self.device.multiply(inputs[synapse],
+                        mul_res, adc = self.device.multiply(inputs[synapse],
                                                        scale_x,
                                                        sign_x,
                                                        scale_w,
@@ -168,9 +169,10 @@ class ElementWiseMatMul():
                         mac_mem += mul_res
                         print(mul_model, mul_res)
                     # пишем результат mac
-                    # with open(fname_mac_result,'a', newline='', encoding='utf-8') as file:
-                    #     file_wr = csv.writer(file, delimiter=",")
-                    #     file_wr.writerow([neuron, synapse, wl, bl, int(inputs_mem[synapse]), res, mul_res, mul_model])
+                    now = datetime.datetime.now()
+                    with open(fname_mac_result,'a', newline='', encoding='utf-8') as file:
+                        file_wr = csv.writer(file, delimiter=",")
+                        file_wr.writerow([now.strftime("%d.%m.%Y_%H.%M.%S"),neuron, synapse, wl, bl, int(inputs_mem[synapse]), adc, mul_res, mul_model])
                 # биасы
                 mac_model += layer_biases[neuron]
                 if layer_biases[neuron] != 0:
@@ -178,7 +180,7 @@ class ElementWiseMatMul():
                     wl = hard_biases[neuron]['wl']
                     bl = hard_biases[neuron]['bl']
                     sign_b = np.sign(layer_biases[neuron])
-                    bias_res = self.device.multiply(1,
+                    bias_res, adc = self.device.multiply(1,
                                                     1,
                                                     1,
                                                     scale_b,
@@ -188,19 +190,22 @@ class ElementWiseMatMul():
                     mac_mem += bias_res
                     print(layer_biases[neuron], bias_res)
                 # пишем результат mac
-                # with open(fname_mac_result,'a', newline='', encoding='utf-8') as file:
-                #     file_wr = csv.writer(file, delimiter=",")
-                #     file_wr.writerow([neuron, 'b', wl, bl, 246, res, mul_res, layer_biases[neuron]])
+                now = datetime.datetime.now()
+                with open(fname_mac_result,'a', newline='', encoding='utf-8') as file:
+                    file_wr = csv.writer(file, delimiter=",")
+                    file_wr.writerow([now.strftime("%d.%m.%Y_%H.%M.%S"), neuron, 'b', wl, bl, 246, adc, mul_res, layer_biases[neuron]])
                 neurons_model.append(mac_model)
                 neurons_mem.append(mac_mem)
             all_neurons_model.append(neurons_model)
             all_neurons_mem.append(neurons_mem)
             # пишем в файл общий результат
-            # result_log.append(np.argmax(softmax(neurons_model)))
-            # result_log.append(np.argmax(softmax(neurons_mem)))
-            # with open(fname_io_result,'a', newline='', encoding='utf-8') as file:
-            #     file_wr = csv.writer(file, delimiter=",")
-            #     file_wr.writerow(result_log)
+            print(neurons_model)
+            result_log.append(np.argmax(neurons_model))
+            result_log.append(np.argmax(neurons_mem))
+            with open(fname_io_result,'a', newline='', encoding='utf-8') as file:
+                file_wr = csv.writer(file, delimiter=",")
+                file_wr.writerow(result_log)
+            result_log = []
         all_neurons_model = np.array(all_neurons_model)
         all_neurons_mem = np.array(all_neurons_mem)
         if 'out_type' in kwargs:
