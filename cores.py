@@ -43,7 +43,7 @@ class HardCore(Application):
         else:
             change_log_file(self.logger)
 
-    def read_one_weight(self, wl, bl):
+    def read_one_weight(self, bl, wl):
         """
         Прочитать одну ячейку
         """
@@ -65,16 +65,16 @@ class HardCore(Application):
         weights = np.zeros((self.ROW_NUM, self.COL_NUM))
         for bl in range(self.ROW_NUM):
             for wl in range(self.COL_NUM):
-                weights[bl][wl] = self.read_one_weight(wl, bl)
+                weights[bl][wl] = self.read_one_weight(bl, wl)
         return weights
 
-    def write_weight(self, wl, bl, weight_value):
+    def write_weight(self, bl, wl, weight_value):
         """
         Записать вес
         В симуляторе веса меняются от 0.07 до 0.33
         """
         for _ in range(self.WRITE_ATTEMPTS):
-            current_weight = self.read_one_weight(wl, bl)
+            current_weight = self.read_one_weight(bl, wl)
             if current_weight > weight_value: # уменьшаем
                 for vol in np.arange(self.V_START, self.V_RESET+self.V_STEP, self.V_STEP):
                     vol_dac = v2d(self.dac_bit, self.vol_ref_dac, vol)
@@ -102,7 +102,7 @@ class HardCore(Application):
         # pylint: disable=C0200
         for bl in range(len(matrix)):
             for wl in range(len(matrix[bl])):
-                self.write_weight(wl, bl, matrix[bl][wl])
+                self.write_weight(bl, wl, matrix[bl][wl])
 
     def read_mem_weights(self, save_folder='', silent=True, weight_correction=1, dop_mod=False, diap=False, cells_filter=False, **kwargs):
         """
@@ -135,18 +135,18 @@ class HardCore(Application):
                             all_mem_weights[bl][wl] = 1000000
                         else:
                             if not silent:
-                                print(f'wl {wl} bl {bl} = {int(res)}, {r2w(self.res_load, int(res)) * weight_correction}')
+                                print(f'bl {bl} wl {wl} = {int(res)}, {r2w(self.res_load, int(res)) * weight_correction}')
                             all_mem_weights[bl][wl] = r2w(self.res_load, int(res)) * weight_correction
                     if cells_filter:
-                        if not (wl, bl) in kwargs['cells']:
+                        if not (bl, wl) in kwargs['cells']:
                             all_mem_weights[bl][wl] = 1000000
                         else:
                             if not silent:
-                                print(f'wl {wl} bl {bl} = {int(res)}, {r2w(self.res_load, int(res)) * weight_correction}')
+                                print(f'bl {bl} wl {wl} = {int(res)}, {r2w(self.res_load, int(res)) * weight_correction}')
                             all_mem_weights[bl][wl] = r2w(self.res_load, int(res)) * weight_correction
                 else:
                     if not silent:
-                        print(f'wl {wl} bl {bl} = {int(res)}, {r2w(self.res_load, int(res)) * weight_correction}')
+                        print(f'bl {bl} wl {wl} = {int(res)}, {r2w(self.res_load, int(res)) * weight_correction}')
                     all_mem_weights[bl][wl] = r2w(self.res_load, int(res)) * weight_correction
         if save_folder:
             with open(os.path.join(save_folder, 'all_mem_weights.pkl'), 'wb') as fp:
@@ -154,7 +154,7 @@ class HardCore(Application):
 
         return all_mem_weights
 
-    def multiply(self, x, scale_x, sign_x, scale_w, sign_w, wl, bl):
+    def multiply(self, x, scale_x, sign_x, scale_w, sign_w, bl, wl):
         """
         Умножение
         """
