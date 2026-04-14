@@ -24,3 +24,28 @@ src.py - содержит вспомогательные функции
 -- get_logger - получить логгер
 -- change_log_file - сменить лог файл (использует get_file_handler)
 -- poisson_binary_array - создает массив нулей и единиц по распределению Пуассона
+
+## Пример создания ИНС
+
+from simulator.src import BoardSimulator
+from MemriNeurons.keras2nmp import convert_keras_2_nmp
+from MemriNeurons.components import load_model
+from MemriNeurons.cores import HardCore
+from MemriNeurons.hardlayers import ElementWiseMatMulLayer
+
+source_model_path = 'my_model.keras'
+new_model_path = 'my_model.custom'
+
+new_model = convert_keras_2_nmp(source_model_path, new_model_path) # конвертация модели
+new_model = load_model(new_model_path) # загрузка модели
+
+conn = BoardSimulator() # подключаем плату
+_ = conn.connect('simulator')
+
+device = HardCore(conn) # создаем ядро
+
+hardlayer = ElementWiseMatMulLayer(device, 'Dense_0', save_folder='my_model') # создаем слой
+hardlayer.find_weights_model(new_model.layers[0].get_weights(), 0.33)
+
+new_model.layers[0].matmul = hardlayer.matmul # подменяем функцию матричного умножения
+output = new_model.predict([x])
