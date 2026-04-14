@@ -39,6 +39,8 @@ class ElementWiseMatMulLayer():
 
         #создаем папку для сохранения результата
         self.result_dir = os.path.join(self.save_folder, self.layer_id)
+        if not os.path.exists(self.save_folder):
+            os.mkdir(self.save_folder)
         if not os.path.exists(self.result_dir):
             os.mkdir(self.result_dir)
 
