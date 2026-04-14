@@ -9,6 +9,7 @@ import pickle
 import datetime
 
 import numpy as np
+from MemriNeurons.src import get_logger, change_log_file
 
 # pylint: disable=C0301
 
@@ -21,6 +22,8 @@ class ElementWiseMatMulLayer():
     outputs = hardlayer.matmul(inputs)
     """
 
+    logger = None
+
     def __init__(self, device, model_path):
         """
         device - устройство у которого есть методы
@@ -32,6 +35,15 @@ class ElementWiseMatMulLayer():
         self.mem_weights_scales = []
         self.layer_weights = []
         self.model_path = model_path
+
+    def update_logger(self):
+        """
+        Задать логирование в файл
+        """
+        if self.logger is None:
+            self.logger = get_logger()
+        else:
+            change_log_file(self.logger)
 
     def find_weights_model(self, layer_weights, max_weight, save_folder='', print_flag=True, layer_id=''):
         """

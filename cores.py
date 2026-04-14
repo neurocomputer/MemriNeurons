@@ -5,6 +5,8 @@
 import os
 import pickle
 import numpy as np
+
+from MemriNeurons.src import get_logger, change_log_file
 from manager.app import Application
 from manager.service import a2r, r2w, v2d, a2v
 
@@ -23,12 +25,23 @@ class HardCore(Application):
     V_SET = 3
     V_STEP = 0.05
 
+    logger = None
+
     def __init__(self, conn):
         """
         Инициализация вычислителя
         """
         super().__init__()
         self.conn = conn
+
+    def update_logger(self):
+        """
+        Задать логирование в файл
+        """
+        if self.logger is None:
+            self.logger = get_logger()
+        else:
+            change_log_file(self.logger)
 
     def read_one_weight(self, wl, bl):
         """
