@@ -8,6 +8,8 @@ import numpy as np
 from manager.app import Application
 from manager.service import a2r, r2w, v2d, a2v
 
+# pylint: disable=C0301
+
 class HardCore(Application):
     """
     Функции вычислителя
@@ -150,4 +152,4 @@ class HardCore(Application):
                   self.vol_ref_adc,
                   adc)
         mul_res = mul * sign_x * sign_w / scale_w / self.vol_read * scale_x
-        return mul_res, adc 
+        return mul_res, adc

@@ -4,19 +4,21 @@
 import os
 import csv
 import copy
-import time
+# import time
 import pickle
 import datetime
 
 import numpy as np
 
-class ElementWiseMatMul():
+# pylint: disable=C0301
+
+class ElementWiseMatMulLayer():
     """
     Поэлементное умножение
     Пример:
-    core = ElementWiseMatMul(device)
-    core.find_weights_model(layer_weights, layer_id='Dense_2')
-    outputs = core.matmul(inputs)
+    hardlayer = ElementWiseMatMulLayer(device)
+    hardlayer.find_weights_model(layer_weights, layer_id='Dense_2')
+    outputs = hardlayer.matmul(inputs)
     """
 
     def __init__(self, device, model_path):
@@ -88,7 +90,9 @@ class ElementWiseMatMul():
         self.mem_weights_scales.append(scale_b)
 
         if save_folder:
-            with open(os.path.join(save_folder, f'all_mem_weights_coordinates_{layer_id}.pkl'), 'wb') as fp:
+            with open(os.path.join(save_folder,
+                                   f'all_mem_weights_coordinates_{layer_id}.pkl'),
+                                   'wb') as fp:
                 pickle.dump([self.mem_weights_coordinates, self.mem_weights_scales], fp)
 
     def matmul(self, input_data, **kwargs):
@@ -138,9 +142,9 @@ class ElementWiseMatMul():
             now = datetime.datetime.now()
             formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
             result_log.append(formatted_date)
-            scale_x = np.max(np.abs(inputs))
+            scale_x = float(np.max(np.abs(inputs)))
             inputs_mem = inputs
-            inputs_mem = list(map(lambda x: np.round(abs(x)/scale_x*0.3*4096/5), inputs_mem))
+            inputs_mem = list(map(lambda x, n=scale_x: np.round(abs(x)/n*0.3*4096/5), inputs_mem))
             neurons_model = []
             neurons_mem = []
             # нейроны
@@ -151,6 +155,7 @@ class ElementWiseMatMul():
                 for synapse in range(layer_weights.shape[0]):
                     mul_model = layer_weights[synapse][neuron] * inputs[synapse]
                     mac_model += mul_model
+                    adc = 0
                     if layer_weights[synapse][neuron] != 0 and inputs[synapse] != 0:
                         # мэмристоры
                         wl = hard_weights[neuron][synapse]['wl']
@@ -172,7 +177,15 @@ class ElementWiseMatMul():
                     now = datetime.datetime.now()
                     with open(fname_mac_result,'a', newline='', encoding='utf-8') as file:
                         file_wr = csv.writer(file, delimiter=",")
-                        file_wr.writerow([now.strftime("%d.%m.%Y_%H.%M.%S"),neuron, synapse, wl, bl, int(inputs_mem[synapse]), adc, mul_res, mul_model])
+                        file_wr.writerow([now.strftime("%d.%m.%Y_%H.%M.%S"),
+                                          neuron,
+                                          synapse,
+                                          wl,
+                                          bl,
+                                          int(inputs_mem[synapse]),
+                                          adc,
+                                          mul_res,
+                                          mul_model])
                 # биасы
                 mac_model += layer_biases[neuron]
                 if layer_biases[neuron] != 0:
@@ -193,7 +206,15 @@ class ElementWiseMatMul():
                 now = datetime.datetime.now()
                 with open(fname_mac_result,'a', newline='', encoding='utf-8') as file:
                     file_wr = csv.writer(file, delimiter=",")
-                    file_wr.writerow([now.strftime("%d.%m.%Y_%H.%M.%S"), neuron, 'b', wl, bl, 246, adc, mul_res, layer_biases[neuron]])
+                    file_wr.writerow([now.strftime("%d.%m.%Y_%H.%M.%S"),
+                                      neuron,
+                                      'b',
+                                      wl,
+                                      bl,
+                                      246,
+                                      adc,
+                                      mul_res,
+                                      layer_biases[neuron]])
                 neurons_model.append(mac_model)
                 neurons_mem.append(mac_mem)
             all_neurons_model.append(neurons_model)

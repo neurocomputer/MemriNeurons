@@ -7,7 +7,7 @@ tensorflow используется только здесь
 
 import pickle
 import tensorflow as tf
-from MemriNeurons.componenets import Sequential, Dense, Conv2D, Flatten
+from MemriNeurons.components import Sequential, Dense, Conv2D, Flatten
 
 def convert_keras_2_nmp(source_model_path, target_model_path):
     """
