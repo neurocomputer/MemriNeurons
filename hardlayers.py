@@ -251,3 +251,45 @@ class ElementWiseMatMulLayer():
                 return all_neurons_model
         # print(time.time() - start_time)
         return all_neurons_mem
+
+class NPULayer():
+    """
+    Слой нейронки на базе НПУ
+    """
+
+    logger = None
+
+    def __init__(self):
+        pass
+
+    
+    def config(self, config_path):
+        """
+        Конфигурация проца
+        """
+        self.config_path = config_path
+        try:
+            with open(os.path.join(config_path, 'npu_config.json'), "r", encoding="utf-8") as f:
+                self.cores_configs = json.load(f)
+        except FileNotFoundError:
+            print('Нет файла npu_config.json')
+        except json.decoder.JSONDecodeError:
+            print('Ошибка чтения файла npu_config.json')
+        else:
+            self.config_name = self.cores_configs['name']
+            for core_id in self.cores_configs['cores']:
+                if not self.silent:
+                    print(f'Конфигурация ядра {core_id}')
+                self.cores[core_id].config(number_accum = self.cores_configs['cores'][core_id]['number_accum'],
+                                            number_sum = self.cores_configs['cores'][core_id]['number_sum'],
+                                            number_input = self.cores_configs['cores'][core_id]['number_input'],
+                                            number_repeat = self.cores_configs['cores'][core_id]['number_repeat'],
+                                            mode_summator = self.cores_configs['cores'][core_id]['mode_summator'],
+                                            mode_input = self.cores_configs['cores'][core_id]['mode_input'],
+                                            steps_col = self.cores_configs['cores'][core_id]['steps_col'],
+                                            steps_line = self.cores_configs['cores'][core_id]['steps_line']
+                                            )
+                if not self.silent:
+                    self.cores[core_id].info("config")
+                    print()
+
