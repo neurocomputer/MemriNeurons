@@ -5,15 +5,35 @@
 import numpy as np
 from MemriNeurons.src import get_logger, change_log_file
 
-class Neuron():
+class LIFNeuron():
+    """
+    LIF нейрон
+    """
 
     logger = None
+    scale_x = 1
+    sign_x = 1
+    scale_w = 1
+    sign_w = 1
+    membrain: float
+    membrain_history: list
+    time_distance = 10 # сколько спайков храним в истории
+    past_distances: list
+    future_distance: list
+    output_history: list
 
     def __init__(self, device, synapses, tresh, leakage):
-        self.synapses = synapses
-        self.tresh = tresh
-        self.device = device
-        self.leakage = leakage
+        self.device = device # устройство исполнения
+        self.synapses = synapses # синапсы нейронов [(bl, wl)]
+        self.tresh = tresh # трешхолд
+        self.leakage = leakage # значение утечки для линейной
+        self.membrain = 0.
+        self.membrain_history = []
+        self.past_distances = [0 for i in range(len(synapses))] # история в прошлое
+        self.future_distance = [0 for i in range(len(synapses))] # история в будующее
+        self.past_distances_all = [[] for i in range(len(synapses))] # история в прошлое
+        self.future_distance_all = [[] for i in range(len(synapses))] # история в будующее
+        self.output_history = []
 
     def update_logger(self):
         """
@@ -24,54 +44,38 @@ class Neuron():
         else:
             change_log_file(self.logger)
 
-    def run(self, input_data, stdp=False):
-        output = []
-        membrain = 0
-        membrain_values = []
-        weights_history = np.zeros((len(self.synapses), len(input_data[0])))
-        for i in range(len(input_data[0])):
-            for j, signal in enumerate(input_data):
-                bl = self.synapses[j][0]
-                wl = self.synapses[j][1]
-                if signal[i] != 0:
-                    scale_x = 1
-                    sign_x = 1
-                    scale_w = 1
-                    sign_w = 1
-                    mul_res, adc = self.device.multiply(signal[i],
-                                                       scale_x,
-                                                       sign_x,
-                                                       scale_w,
-                                                       sign_w,
-                                                       wl,
-                                                       bl)
-                    membrain+=mul_res
-            if membrain > self.tresh:
-                output.append(1)
-                membrain_values.append(membrain)
-                membrain = 0
-                # if stdp:
-                #     for j, signal in enumerate(input_data):
-                #         bl = self.synapses[j][0]
-                #         wl = self.synapses[j][1]
-                #         if signal[i] != 0: # усиливаем связь
-                #             # adc = mode_7(SERIAL, self.conn, wl=wl, bl=bl, vol_read=0.3, vol=-V_STDP, res_load=3000, res_switches=10, gain=11, adc_bit=14, vol_ref_adc=5, duration=T_STPD)
-                #             adc, _ = self.conn.mode_7(V_STDP, 0, 125, 1, 0, wl, bl)
-                #         else: # ослабляем связь
-                #             #adc = mode_7(SERIAL, self.conn, wl=wl, bl=bl, vol_read=0.3, vol=V_STDP, res_load=3000, res_switches=10, gain=11, adc_bit=14, vol_ref_adc=5, duration=T_STPD)
-                #             adc, _ = self.conn.mode_7(V_STDP, 0, 125, 0, 0, wl, bl)
-                #         res = convert_adc_to_res(11, 3000, 0.3, 14, 5, 10, adc)
-                #         current_weight = convert_res_to_weight(3000, res)
-                #         weights_history[j][i] = current_weight
+    def set_input_spike(self, spikes, stdp=False):
+        """
+        Подать один спайк
+        """
+        assert len(spikes) == len(self.synapses) # спайков столько сколько синапсов
+        for synapse_index, spike in enumerate(spikes):
+            bl = self.synapses[synapse_index][0]
+            wl = self.synapses[synapse_index][1]
+            mul_res = 0
+            if spike != 0:
+                mul_res, _ = self.device.multiply(spike,
+                                                    self.scale_x,
+                                                    self.sign_x,
+                                                    self.scale_w,
+                                                    self.sign_w,
+                                                    bl,
+                                                    wl)
+                self.past_distances[synapse_index] = self.time_distance #0
             else:
-                # if stdp:
-                #     for j, signal in enumerate(input_data):
-                #         bl = self.synapses[j][0]
-                #         wl = self.synapses[j][1]
-                #         weights_history[j][i] = read_one_weight(self.conn, wl, bl)
-                output.append(0)
-                membrain -= self.leakage
-                if membrain < 0: membrain = 0
-                membrain_values.append(membrain)
-
-        return membrain_values, output, weights_history
+                self.past_distances[synapse_index] -= 1
+            self.past_distances_all[synapse_index].append(self.past_distances[synapse_index])
+            self.membrain += mul_res
+        self.membrain_history.append(self.membrain)
+        # print(spike, round(mul_res, 3), round(self.membrain,3), self.past_distances)
+        if self.membrain > self.tresh:
+            self.membrain = 0
+            self.output_history.append(1)
+            # STDP
+            if stdp:
+                for synapse_index, synapse in enumerate(self.synapses):
+                    bl = synapse[0]
+                    wl = synapse[1]
+                    print(f'Усиливаем связь на {self.past_distances[synapse_index]}')
+        else:
+            self.output_history.append(0)
