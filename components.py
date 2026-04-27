@@ -43,13 +43,13 @@ def feature_map_reshape(feature_map, kernel_shape, strides_shape):
         sample_cutted = []
         for i in range(scale_factor_x):
             for j in range(scale_factor_y):
-                area = np.zeros(shape=(stride_x, stride_y, channels))
-                x1 = i*conv_x
-                x2 = i*conv_x+stride_x
+                area = np.zeros(shape=(conv_x, conv_y, channels))
+                x1 = i*stride_x
+                x2 = i*stride_x+conv_x
                 if x2 > size[0]:
                     x2 = size[0]
-                y1 = j*conv_y
-                y2 = j*conv_y+stride_y
+                y1 = j*stride_y
+                y2 = j*stride_y+conv_y
                 if y2 > size[1]:
                     y2 = size[1]
                 croped_image = sample[x1:x2,y1:y2]
