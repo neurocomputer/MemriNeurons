@@ -54,13 +54,14 @@ class LIFNeuron():
             wl = self.synapses[synapse_index][1]
             mul_res = 0
             if spike != 0:
-                mul_res, _ = self.device.multiply(spike,
-                                                    self.scale_x,
-                                                    self.sign_x,
-                                                    self.scale_w,
-                                                    self.sign_w,
-                                                    bl,
-                                                    wl)
+                # multiplication(self, x, bl, wl, scale_x=1, scale_w=1, sign_w=1)
+                mul_res, _ = self.device.multiplication(spike,
+                                                        bl,
+                                                        wl,
+                                                        self.scale_x,
+                                                        self.scale_w,
+                                                        self.sign_w,
+                                                        )
                 self.past_distances[synapse_index] = self.time_distance #0
             else:
                 self.past_distances[synapse_index] -= 1
