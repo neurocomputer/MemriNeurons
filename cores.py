@@ -1,5 +1,5 @@
 """
-Ядро обработки
+Processing core
 """
 
 import os
@@ -15,7 +15,7 @@ from manager.service import a2r, r2w, v2d, a2v, d2v
 
 class HardCore(Application):
     """
-    Функции вычислителя
+    Calculator functions
     """
 
     COL_NUM = 8
@@ -33,7 +33,7 @@ class HardCore(Application):
 
     def __init__(self, conn):
         """
-        Инициализация вычислителя
+        Calculator initialization
         """
         super().__init__()
         self.conn = conn
@@ -44,21 +44,21 @@ class HardCore(Application):
 
     def set_wr(self):
         """
-        Перейти на запись чтение
+        Switch to write-read mode
         """
         self._contour = "wr"
         self.read_raw_weights()
 
     def set_mvm(self):
         """
-        Перейти на матричное умножение
+        Switch to matrix-vector multiplication mode
         """
         self._contour = "mvm"
         self.read_raw_weights()
 
     def update_logger(self):
         """
-        Задать логирование в файл
+        Set logging to file
         """
         if self.logger is None:
             self.logger = get_logger()
@@ -67,16 +67,16 @@ class HardCore(Application):
 
     def _calculate_weight_value(self, res):
         """
-        Посчитать значение веса
+        Calculate the weight value
         """
         if self._contour == 'wr':
             return r2w(self.res_load, res)
         elif self._contour == 'mvm':
-            return self.sum_gain / res # todo: перенести в manager.service
+            return self.sum_gain / res # todo: move to manager.service
 
     def read_one_weight(self, bl, wl):
         """
-        Прочитать одну ячейку
+        Read a single cell
         """
         adc = self.conn.mode_7(0, 0, 0, 0, 0, wl, bl)
         adc = adc[0]
@@ -94,7 +94,7 @@ class HardCore(Application):
 
     def read_raw_weights(self):
         """
-        Прочитать все веса в кроссбаре
+        Read all weights in the crossbar
         """
         weights = np.zeros((self.ROW_NUM, self.COL_NUM))
         for bl in range(self.ROW_NUM):
@@ -104,8 +104,8 @@ class HardCore(Application):
 
     def write_weight(self, bl, wl, weight_value, silent=True):
         """
-        Записать вес
-        В симуляторе веса меняются от 0.07 до 0.33
+        Write a weight
+        In the simulator, weights range from 0.07 to 0.33
         """
         weight_history = []
         need_break = False
@@ -113,32 +113,32 @@ class HardCore(Application):
         for _ in range(self.WRITE_ATTEMPTS):
             current_weight = self.read_one_weight(bl, wl)
             weight_history.append(current_weight)
-            if current_weight > weight_value: # уменьшаем
+            if current_weight > weight_value: # decrease
                 for vol in np.arange(self.V_START, self.V_RESET+self.V_STEP, self.V_STEP):
                     vol_dac = v2d(self.dac_bit, self.vol_ref_dac, vol)
                     adc = self.conn.mode_7(vol_dac, 0, self.T_US, 0, 0, wl, bl)
                     adc = adc[0]
                     res = a2r(self.gain, self.res_load, self.vol_read, self.adc_bit, self.vol_ref_adc, self.res_load, adc)
                     current_weight = self._calculate_weight_value(res)
-                    current_weight = self.read_one_weight(bl, wl) # todo: разобраться!
+                    current_weight = self.read_one_weight(bl, wl) # todo: investigate!
                     weight_history.append(current_weight)
                     if not silent:
                         print(f'Goal weight {weight_value}, Current weight {current_weight}')
-                    if current_weight < weight_value: # прерываем
+                    if current_weight < weight_value: # break
                         need_break = True
                         break
-            else: # увеличиваем
+            else: # increase
                 for vol in np.arange(self.V_START, self.V_SET+self.V_STEP, self.V_STEP):
                     vol_dac = v2d(self.dac_bit, self.vol_ref_dac, vol)
                     adc = self.conn.mode_7(vol_dac, 0, self.T_US, 1, 0, wl, bl)
                     adc = adc[0]
                     res = a2r(self.gain, self.res_load, self.vol_read, self.adc_bit, self.vol_ref_adc, self.res_load, adc)
                     current_weight = self._calculate_weight_value(res)
-                    current_weight = self.read_one_weight(bl, wl) # todo: разобраться!
+                    current_weight = self.read_one_weight(bl, wl) # todo: investigate!
                     weight_history.append(current_weight)
                     if not silent:
                         print(f'Goal weight {weight_value}, Current weight {current_weight}')
-                    if current_weight > weight_value: # прерываем
+                    if current_weight > weight_value: # break
                         need_break = True
                         break
             if need_break:
@@ -149,7 +149,7 @@ class HardCore(Application):
 
     def write_matrix(self, matrix, silent=True):
         """
-        Записать матрицу
+        Write a matrix
         """
         # pylint: disable=C0200
         assert len(matrix) <= self.ROW_NUM
@@ -163,14 +163,14 @@ class HardCore(Application):
 
     def read_mem_weights(self, save_folder='', silent=True, weight_correction=1, dop_mod=False, diap=False, cells_filter=False, **kwargs):
         """
-        Прочитать все веса в сети
+        Read all weights in the network
         """
         all_mem_weights = np.zeros(shape=(self.ROW_NUM, self.COL_NUM), dtype=float)
         for wl in range(self.COL_NUM):
             for bl in range(self.ROW_NUM):
                 adc = self.conn.mode_7(0, 0, 0, 0, 0, wl, bl)
                 adc = adc[0]
-                # повторный запрос
+                # retry request
                 if adc < 10:
                     adc = self.conn.mode_7(0, 0, 0, 0, 0, wl, bl)
                     adc = adc[0]
@@ -213,7 +213,7 @@ class HardCore(Application):
 
     def multiplication(self, x, bl, wl, scale_x=1, scale_w=1, sign_w=1):
         """
-        Умножение. Выполняется через контур чтения/записи
+        Multiplication. Performed via read/write loop
         x - voltage
         """
         if self._contour == 'wr':
@@ -234,7 +234,7 @@ class HardCore(Application):
 
     def dot_product(self, x, wl, scale_x=1, scale_w=1):
         """
-        Скалярное произведение двух векторов
+        Dot product of two vectors
         """
         if self._contour == 'mvm':
             assert len(x) <= self.ROW_NUM
