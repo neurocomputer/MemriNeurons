@@ -15,11 +15,13 @@ class Astrocyte():
     active: int = 0 # активность астроцита
     membrains_changers: list # изменяторы трешхолда
     gain = 0.3 # коэффициент изменения трешхолда
-    membrain_history: list # история астроцита
+    membrain_history: list # история мембраны астроцита
+    active_history: list # история активности астроцита
 
     def __init__(self):
         self.membrains_changers = []
         self.membrain_history = []
+        self.active_history = []
 
     def set_controlled_membrains(self, neurons):
         """
@@ -39,16 +41,17 @@ class Astrocyte():
             if self.membrain > self.tresh:
                 self.active = self.active_time
                 self.activate_astrocyte() # активируем
-                self.membrain_history.append(1) # активен
+                self.active_history.append(1) # активен
             else:
-                self.membrain_history.append(0) # не активен
+                self.active_history.append(0) # не активен
         else:
             self.active -= 1
             if self.active == 0: # деактивируем
-                self.membrain_history.append(0)
+                self.active_history.append(0)
                 self.deactivate_astrocyte()
             else:
-                self.membrain_history.append(1) # активен
+                self.active_history.append(1) # активен
+        self.membrain_history.append(self.membrain)
 
     def activate_astrocyte(self):
         """
@@ -73,18 +76,19 @@ class Synapse():
     logger = None
 
     trace_value: int = 0 # начальное значение трейса
-    trace_deep: int = 4 # ширина трейса (в импульсах)
+    trace_deep: int # ширина трейса (в импульсах)
     trace_history: list # история трейса
     conductace_history: list # история проводимости мемристора
     weight_history: list # история изменения веса
     lock_stdp: bool = False # блокер STDP
 
-    def __init__(self, device, logger, bl, wl, neuron_name):
+    def __init__(self, device, logger, bl, wl, neuron_name, trace_deep):
         self.device = device # устройство подключения
         self.logger = logger # логгер
         self.bl = bl
         self.wl = wl
         self.neuron_name = neuron_name
+        self.trace_deep = trace_deep
         self.trace_history = [] # история трейса
         self.conductace_history = [] # история проводимости
         self.weight_history = [] # история веса
@@ -145,13 +149,13 @@ class LIFNeuron():
     membrain: float = 0.0 # мВ
     membrain_relaxed = 0.0 # значение мембраны по умолчанию (потенциал покоя)
     tresh: float # трешхолд (текущий)
-    leakage: float = 0.01/178*19 # утечка
+    leakage: float = 0 # утечка
     trace_value: int = 0 # начальное значение трейса
-    trace_deep: int = 4 # ширина трейса (в импульсах)
+    trace_deep: int = 5 # ширина трейса (в импульсах)
     trace_history: list # история трейса
     membrain_history: list
     output_history: list
-    basic_tresh: float = 0.68/178*19 # трешхолд (по умолчанию)
+    basic_tresh: float = 0.05 # трешхолд (по умолчанию)
 
     vol_max_pot = 2.85
     vol_min_pot = 2.4
@@ -167,7 +171,7 @@ class LIFNeuron():
         self.device = device # устройство исполнения
         self.wl = wl # столбец кроссбара нейрона
         self.update_logger() # получаем логгер
-        self.synapses = [Synapse(self.device, self.logger, i, self.wl, self.name) for i in range(synapses_amount)] # синапсы
+        self.synapses = [Synapse(self.device, self.logger, i, self.wl, self.name, self.trace_deep) for i in range(synapses_amount)] # синапсы
         self.membrain_history = [] # история мембраны
         self.output_history = [] # история выхода нейрона
         self.trace_history = [] # история трейса
@@ -265,3 +269,13 @@ class LIFNeuron():
         elif mode == 'basic':
             self.tresh = self.basic_tresh
             print(f'{self.name} Трешхолд basic {self.tresh}')
+
+    def change_trace_deep(self, trace_deep):
+        """
+        Задать новое значение ширины трейса
+        """
+        self.trace_deep = trace_deep
+        for synapse in self.synapses:
+            synapse.trace_deep = trace_deep
+        self.potentiation_table = np.linspace(self.vol_min_pot, self.vol_max_pot, trace_deep)
+        self.depression_table = np.linspace(self.vol_min_dep, self.vol_max_dep, trace_deep)
