@@ -22,8 +22,8 @@ class HardCore(Application):
     ROW_NUM = 32
     WRITE_ATTEMPTS = 10
     V_START = 0.3 # V
-    V_RESET = 1.5 # V
-    V_SET = 1.5 # V
+    V_RESET = 3 # V
+    V_SET = 3 # V
     V_STEP = 0.01 # V
     T_US = 125 # us
     MAX_SUM_CURRENT = 15 # mA
@@ -78,19 +78,11 @@ class HardCore(Application):
         """
         Read a single cell
         """
-        adc = self.conn.mode_7(0, 0, 0, 0, 0, wl, bl)
-        adc = adc[0]
-        res = a2r(self.gain,
-                  self.res_load,
-                  self.vol_read,
-                  self.adc_bit,
-                  self.vol_ref_adc,
-                  self.res_switches,
-                  adc)
+        res = self.measure_resistance(bl, wl)
         weight = self._calculate_weight_value(res)
         self.current_weights[bl][wl] = weight
         self.current_resistances[bl][wl] = res
-        return weight
+        return weight, res
 
     def read_raw_weights(self):
         """
@@ -99,7 +91,7 @@ class HardCore(Application):
         weights = np.zeros((self.ROW_NUM, self.COL_NUM))
         for bl in range(self.ROW_NUM):
             for wl in range(self.COL_NUM):
-                weights[bl][wl] = self.read_one_weight(bl, wl)
+                weights[bl][wl], _ = self.read_one_weight(bl, wl)
         return weights
 
     def write_weight(self, bl, wl, weight_value, silent=True):
@@ -107,21 +99,20 @@ class HardCore(Application):
         Write a weight
         In the simulator, weights range from 0.07 to 0.33
         """
+        vol_history = []
         weight_history = []
         need_break = False
         weight_value = abs(weight_value)
         for _ in range(self.WRITE_ATTEMPTS):
-            current_weight = self.read_one_weight(bl, wl)
-            weight_history.append(current_weight)
+            current_weight, _ = self.read_one_weight(bl, wl)
+            # weight_history.append(current_weight)
             if current_weight > weight_value: # decrease
                 for vol in np.arange(self.V_START, self.V_RESET+self.V_STEP, self.V_STEP):
-                    vol_dac = v2d(self.dac_bit, self.vol_ref_dac, vol)
-                    adc = self.conn.mode_7(vol_dac, 0, self.T_US, 0, 0, wl, bl)
-                    adc = adc[0]
-                    res = a2r(self.gain, self.res_load, self.vol_read, self.adc_bit, self.vol_ref_adc, self.res_load, adc)
+                    res = self.apply_voltage(vol, 0, bl, wl)
                     current_weight = self._calculate_weight_value(res)
-                    current_weight = self.read_one_weight(bl, wl) # todo: investigate!
+                    current_weight, _ = self.read_one_weight(bl, wl) # todo: investigate!
                     weight_history.append(current_weight)
+                    vol_history.append(float(vol))
                     if not silent:
                         print(f'Goal weight {weight_value}, Current weight {current_weight}')
                     if current_weight < weight_value: # break
@@ -129,13 +120,11 @@ class HardCore(Application):
                         break
             else: # increase
                 for vol in np.arange(self.V_START, self.V_SET+self.V_STEP, self.V_STEP):
-                    vol_dac = v2d(self.dac_bit, self.vol_ref_dac, vol)
-                    adc = self.conn.mode_7(vol_dac, 0, self.T_US, 1, 0, wl, bl)
-                    adc = adc[0]
-                    res = a2r(self.gain, self.res_load, self.vol_read, self.adc_bit, self.vol_ref_adc, self.res_load, adc)
+                    res = self.apply_voltage(vol, 1, bl, wl)
                     current_weight = self._calculate_weight_value(res)
-                    current_weight = self.read_one_weight(bl, wl) # todo: investigate!
+                    current_weight, _ = self.read_one_weight(bl, wl) # todo: investigate!
                     weight_history.append(current_weight)
+                    vol_history.append(-float(vol))
                     if not silent:
                         print(f'Goal weight {weight_value}, Current weight {current_weight}')
                     if current_weight > weight_value: # break
@@ -143,9 +132,9 @@ class HardCore(Application):
                         break
             if need_break:
                 break
-        current_weight = self.read_one_weight(bl, wl)
-        weight_history.append(current_weight)
-        return current_weight, weight_history
+        current_weight, _ = self.read_one_weight(bl, wl)
+        # weight_history.append(current_weight)
+        return current_weight, weight_history, vol_history
 
     def write_matrix(self, matrix, silent=True):
         """
@@ -238,7 +227,7 @@ class HardCore(Application):
         """
         if self._contour == 'mvm':
             assert len(x) <= self.ROW_NUM
-            v_dac = [0 for i in range(len(x))]
+            v_dac = [0 for i in range(self.ROW_NUM)]
             # safety check
             for h, x_value in enumerate(x):
                 input_mem = v2d(self.dac_bit, self.vol_ref_dac, abs(x_value)/scale_x)
@@ -264,3 +253,28 @@ class HardCore(Application):
             return mul_res, adc
         else:
             print(f"ATTENTION! You tried to work in mvm-mode, but {self._contour}-mode set up!")
+
+    def apply_voltage(self, vol, rev, bl, wl):
+        """
+        Подать напряжение
+        """
+        vol_dac = v2d(self.dac_bit, self.vol_ref_dac, vol)
+        adc = self.conn.mode_7(vol_dac, 0, self.T_US, rev, 0, wl, bl)
+        adc = adc[0]
+        res = a2r(self.gain, self.res_load, self.vol_read, self.adc_bit, self.vol_ref_adc, self.res_load, adc)
+        return res
+
+    def measure_resistance(self, bl, wl):
+        """
+        Измерить сопротивление
+        """
+        adc = self.conn.mode_7(0, 0, 0, 0, 0, wl, bl)
+        adc = adc[0]
+        res = a2r(self.gain,
+                  self.res_load,
+                  self.vol_read,
+                  self.adc_bit,
+                  self.vol_ref_adc,
+                  self.res_switches,
+                  adc)
+        return res

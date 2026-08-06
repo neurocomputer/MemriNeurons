@@ -35,10 +35,10 @@ class ElementWiseMatMulLayer():
         """
         self.device = device
         self.layer_id = layer_id
-        self.all_mem_weights = []
-        self.mem_weights_coordinates = []
-        self.mem_weights_scales = []
-        self.layer_weights = []
+        self.all_mem_weights = [] # all memristive weights
+        self.mem_weights_coordinates = [] # [weights, biases] of {'bl', 'wl'}
+        self.mem_weights_scales = [] # scale_w, scale_b
+        self.layer_weights = [] # source layer weights [weights, biases]
         self.save_folder = save_folder
 
         # make result folder
@@ -266,10 +266,15 @@ class SingleCrossbarMatMulLayer():
 
     logger = None
 
-    def __init__(self, device, layer_id, save_folder=os.getcwd()):
+    def __init__(self, device, layer_id, save_folder=os.getcwd()) -> None:
         self.device = device
         self.layer_id = layer_id
         self.save_folder = save_folder
+
+        self.all_mem_weights = [] # all memristive weights
+        # self.mem_weights_coordinates = [] # [weights, biases] of {'bl', 'wl'}
+        self.mem_weights_scales = [] # scale_w, scale_b
+        self.layer_weights = [] # source layer weights [weights, biases]
 
         # make result folder
         self.result_dir = os.path.join(self.save_folder, self.layer_id)
@@ -278,7 +283,7 @@ class SingleCrossbarMatMulLayer():
         if not os.path.exists(self.result_dir):
             os.mkdir(self.result_dir)
 
-    def update_logger(self):
+    def update_logger(self) -> None:
         """
         Logging into a file
         """
@@ -287,7 +292,24 @@ class SingleCrossbarMatMulLayer():
         else:
             change_log_file(self.logger)
 
-    def matmul(self, input_data, **kwargs):
+    def write_weights(self, weights, left_top=None):
+        """
+        Writing weights from left_top, right_bottom
+        weights - (inputs, neurons)
+        biases - (neurons, )
+        """
+        if left_top is None:
+            left_top = (0, 0)
+        if right_bottom is None:
+            right_bottom = (left_top[0]+weights[0].shape[0]+1, left_top[1]+weights.shape[1])
+        assert left_top[0] < self.device.ROW_NUM-1
+        assert left_top[1] < self.device.COL_NUM-1
+        assert right_bottom[0] < self.device.ROW_NUM-1
+        assert right_bottom[1] < self.device.COL_NUM-1
+        print(left_top)
+        print(right_bottom)
+
+    def matmul(self, input_data, **kwargs) -> np.ndarray:
         """
         
         """
