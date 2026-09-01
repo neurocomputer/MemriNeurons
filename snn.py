@@ -120,10 +120,10 @@ class Synapse():
         Потенциация (SET)
         """
         if not self.lock_stdp:
-            print(f"{self.neuron_name} синапс {self.bl} - потенциация")
+            #print(f"{self.neuron_name} синапс {self.bl} - потенциация")
             res = self.device.apply_voltage(voltage, 1, self.bl, self.wl)
         else:
-            print(f"{self.neuron_name} синапс {self.bl} - потенциация БЛОКИРОВАНО!")
+            #print(f"{self.neuron_name} синапс {self.bl} - потенциация БЛОКИРОВАНО!")
             res = self.device.measure_resistance(self.bl, self.wl)
         return 1/res
 
@@ -132,11 +132,18 @@ class Synapse():
         Депрессия (RESET)
         """
         if not self.lock_stdp:
-            print(f"{self.neuron_name} синапс {self.bl} - депрессия")
+            #print(f"{self.neuron_name} синапс {self.bl} - депрессия")
             res = self.device.apply_voltage(voltage, 0, self.bl, self.wl)
         else:
-            print(f"{self.neuron_name} синапс {self.bl} - депрессия БЛОКИРОВАНО!")
+            #print(f"{self.neuron_name} синапс {self.bl} - депрессия БЛОКИРОВАНО!")
             res = self.device.measure_resistance(self.bl, self.wl)
+        return 1/res
+
+    def forget(self, voltage):
+        """
+        Забывание
+        """
+        res = self.device.apply_voltage(voltage, 0, self.bl, self.wl)
         return 1/res
 
 class LIFNeuron():
@@ -155,12 +162,16 @@ class LIFNeuron():
     trace_history: list # история трейса
     membrain_history: list
     output_history: list
-    basic_tresh: float = 0.05 # трешхолд (по умолчанию)
+    basic_tresh: float = 0.005/2 # трешхолд (по умолчанию)
+    forgetting_freq: int = 10 # частота срабатывания забывания
+    forgetting_counter: int = 0 # счетчик забывания
+    forgetting_flag: bool = False # флаг забывания
 
-    vol_max_pot = 2.85
-    vol_min_pot = 2.4
-    vol_max_dep = 2.5
+    vol_max_pot = 2.6
+    vol_min_pot = 2.0
+    vol_max_dep = 2.2
     vol_min_dep = 1.9
+    vol_forget = 1.9
     potentiation_table = np.linspace(vol_min_pot, vol_max_pot, trace_deep)
     depression_table = np.linspace(vol_min_dep, vol_max_dep, trace_deep)
 
@@ -219,6 +230,14 @@ class LIFNeuron():
             if spike > 0:
                 self.synapses[spike_indx].depress(self.depression_table[self.trace_value-1])
 
+    def forgetting(self):
+        """
+        Забывание
+        """
+        self.device.set_wr()
+        for synapse in self.synapses:
+            synapse.forget(self.vol_forget)
+
     def set_input_spike(self, spikes, stdp=True):
         """
         Подать один набор спайков
@@ -254,6 +273,12 @@ class LIFNeuron():
             self.trace_value = 0
         self.output_history.append(output_spike)
         self.trace_history.append(self.trace_value)
+        # забывание
+        if self.forgetting_flag:
+            if self.forgetting_counter % self.forgetting_freq == 0:
+                self.forgetting()
+                self.forgetting_counter = 0
+            self.forgetting_counter += 1
         self.update_synapce_conductances()
         return output_spike
 
