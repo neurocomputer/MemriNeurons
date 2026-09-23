@@ -1,6 +1,6 @@
 # MemriNeurons Pipeline
 
-![MemriNeurons structure](docs/figures/en_structure.png)
+![MemriNeurons structure](figures/en_structure.png)
 
 ---
 
