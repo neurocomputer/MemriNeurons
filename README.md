@@ -1,65 +1,71 @@
-# MemriNeurons
+# Welcome to MemriNeurons — a Framework for In-Memory Computing and Neuromorphic Systems Based on Memristors
 
-Для запуска необходимо сначала склонировать репозиторий MemriBoard, затем в него склонировать репозиторий MemriNeurons и если вы работаете с настоящей платой, а не симулятором, то нужно еще склонировать репозиторий MemriCore. Нейросети создавать в папке MemriBoard:
+The main documentation for environment setup is available here: [github.com/neurocomputer/MemriDocs](https://github.com/neurocomputer/MemriDocs)
 
+## ⚙️ Quick Environment Setup
+
+To run MemriNeurons, you need to:
+
+1. First clone the **MemriBoard** repository.
+2. Then clone the **MemriNeurons** repository inside it.
+3. If you are working with a real board (not the simulator), you also need to clone the **MemriCore** repository.
+
+Neural networks must be created inside the `MemriBoard` folder:
+
+```
 MemriBoard
         |-MemriNeurons
         |-MemriCORE
         |-simulator.cb
-        |-ваш_файл.py
+        |-your_neural_network_file.py
+```
 
-Пример работы в файле xor_example.py. Для его запуска его нужно скопировать на уровень ваш_файл.py. Внутри файла нужно установить в 1 те тесты, которые хотите выполнить.
+Example scripts can be found in the `examples` folder of <https://github.com/neurocomputer/MemriDocs>.
+The neural network creation pipeline is described in [`docs/en_memrineurons.md`](docs/en_memrineurons.md).
 
-Структура MemriNeurons:
+## 📁 MemriNeurons Structure
 
-components.py - содержит компоненты ИНС для конвертации, чтобы можно было запускать модель только с помощю numpy:
--- load_model - загрузка модели
--- feature_map_reshape - преобразователь карт признаков для обработки в сверточном слое
--- Sequential - модель ИНС
--- Layer - слой ИНС
--- Dense - полносвязный слой
--- Conv2D - сверточный слой
--- Flatten - слой выпрямления
+### `components.py`
+Contains neural network components for conversion, so that a model can be run using only NumPy:
 
-keras2nmp.py - конвертер модели ИНС из формата keras в формат numpy
--- convert_keras_2_nmp - функция конвертации
+- `load_model` — load a model
+- `feature_map_reshape` — feature map reshape helper for processing in a convolutional layer
+- `Sequential` — neural network model
+- `Layer` — neural network layer
+- `Dense` — fully connected layer
+- `Conv2D` — convolutional layer
+- `Flatten` — flatten layer
 
-hardlayers.py - содержит классы, выполняющие матричное умножение в слоях ИНС:
--- ElementWiseMatMulLayer - поэлементное умножение для целого слоя
+### `keras2nmp.py`
+Converter for neural network models from Keras format to NumPy format:
 
-cores.py - вычислитель на кроссбар массиве мемристоров. Есть плата, которая содержит мемристоры. Для взаимодействия с платой используется драйвер из MemriCore, но он выполняет лишь пересылку данных по интерфейсу (в режимах mode_7, mode_9, mode_mvm, mode_core). Но ядру нужны и дополнительные функции, такие как чтение/запись весов и т.д.:
--- HardCore - класс работы с ядром
+- `convert_keras_2_nmp` — conversion function
 
-src.py - содержит вспомогательные функции
--- get_logger - получить логгер
--- change_log_file - сменить лог файл (использует get_file_handler)
--- poisson_binary_array - создает массив нулей и единиц по распределению Пуассона
+### `hardlayers.py`
+Contains classes that perform matrix multiplication in neural network layers:
 
-## Пример создания ИНС
+- `ElementWiseMatMulLayer` — element-wise multiplication for an entire layer
+- other layers are under development — join us!
 
-from simulator.src import BoardSimulator
-from MemriNeurons.keras2nmp import convert_keras_2_nmp
-from MemriNeurons.components import load_model
-from MemriNeurons.cores import HardCore
-from MemriNeurons.hardlayers import ElementWiseMatMulLayer
+### `cores.py`
+Compute engine on a memristive crossbar array. There is a board containing memristors. A driver from **MemriCore** is used to interact with the board, but it only handles data transmission over the interface (in modes `mode_7`, `mode_9`, `mode_mvm`, `mode_core`). The core, however, also needs additional functions such as reading/writing weights, etc.:
 
-SOURCE_MODEL_PATH = 'my_model.keras'
-NEW_MODEL_PATH = 'my_model.custom'
+- `HardCore` — class for working with the core (description here: [`docs/en_hardcore.md`](docs/en_hardcore.md))
 
-new_model = convert_keras_2_nmp(SOURCE_MODEL_PATH, NEW_MODEL_PATH) # конвертация модели
-new_model = load_model(NEW_MODEL_PATH) # загрузка модели
+### `snn.py`
+Contains components of spiking neural networks:
 
-conn = BoardSimulator() # подключаем плату
-_ = conn.connect('simulator') # должен быть создан simulator.cb
+- `Astrocyte` — astrocytes
+- `Synapse` — synapses
+- `LIFNeuron` — neurons
 
-device = HardCore(conn) # создаем ядро
+### `src.py`
+Contains auxiliary functions:
 
-hardlayer1 = ElementWiseMatMulLayer(device, 'Dense_1', save_folder='my_model') # создаем слой
-hardlayer1.find_weights_model(new_model.layers[0].get_weights(), 0.33)
-new_model.layers[0].matmul = hardlayer1.matmul # подменяем функцию матричного умножения
+- `get_logger` — get a logger
+- `change_log_file` — change the log file (uses `get_file_handler`)
+- `poisson_binary_array` — create an array of zeros and ones following a Poisson distribution
 
-hardlayer2 = ElementWiseMatMulLayer(device, 'Dense_2', save_folder='my_model') # создаем слой
-hardlayer2.find_weights_model(new_model.layers[1].get_weights(), 0.33)
-new_model.layers[1].matmul = hardlayer2.matmul # подменяем функцию матричного умножения
+---
 
-output = new_model.predict(input_data)
+## 🚀 Let's Get Started!
