@@ -262,19 +262,34 @@ class ElementWiseMatMulLayer():
 class SingleCrossbarMatMulLayer():
     """
     Matrix multiplication using single crossbar
+    Only positive voltages can be applied to BL, so signed inputs and weights are split:
+    X = X+ - X-, W = (G+ - G-)/scale_w, every neuron uses two columns (G+, G-)
+    X*W = (X+*G+ - X-*G+ - X+*G- + X-*G-)/scale_w
+    Example:
+    hardlayer = SingleCrossbarMatMulLayer(device, layer_id='Dense_1', save_folder='model')
+    hardlayer.write_weights(weights)
+    outputs = hardlayer.matmul(inputs)
     """
 
     logger = None
+    G_MIN = 0.0033 # minimum conductance (mvm weight) of a memristor
+    G_MAX = 0.05 # maximum conductance (mvm weight) of a memristor
 
     def __init__(self, device, layer_id, save_folder=os.getcwd()) -> None:
+        """
+        device - memristors device middelware
+        layer_id - layer name
+        save_folder - path to result folder
+        """
         self.device = device
         self.layer_id = layer_id
         self.save_folder = save_folder
 
-        self.all_mem_weights = [] # all memristive weights
-        # self.mem_weights_coordinates = [] # [weights, biases] of {'bl', 'wl'}
-        self.mem_weights_scales = [] # scale_w, scale_b
-        self.layer_weights = [] # source layer weights [weights, biases]
+        self.layer_weights = None # source layer weights (inputs, neurons)
+        self.target_conductances = None # target conductances (inputs, 2*neurons): G+, G- columns
+        self.mem_conductances = None # written conductances (inputs, 2*neurons)
+        self.scale_w = 1 # G = W*scale_w
+        self.left_top = (0, 0) # (bl, wl) of the first used cell
 
         # make result folder
         self.result_dir = os.path.join(self.save_folder, self.layer_id)
@@ -292,27 +307,85 @@ class SingleCrossbarMatMulLayer():
         else:
             change_log_file(self.logger)
 
-    def write_weights(self, weights, left_top=None):
+    def map_weights(self, weights) -> np.ndarray:
         """
-        Writing weights from left_top, right_bottom
+        Map weights to conductances pairs
         weights - (inputs, neurons)
-        biases - (neurons, )
+        W = 0 -> G+ = G- = G_MIN, |W| = max|W| -> |G+ - G-| = G_MAX - G_MIN
+        return conductances (inputs, 2*neurons), columns 2j - G+, 2j+1 - G-
+        """
+        weights = np.asarray(weights, dtype=float)
+        max_weight = np.max(np.abs(weights))
+        self.scale_w = (self.G_MAX - self.G_MIN) / max_weight if max_weight != 0 else 1
+        conductances = np.full((weights.shape[0], 2*weights.shape[1]), self.G_MIN, dtype=float)
+        conductances[:, 0::2] += np.where(weights > 0, weights, 0) * self.scale_w
+        conductances[:, 1::2] += np.where(weights < 0, -weights, 0) * self.scale_w
+        return conductances
+
+    def write_weights(self, weights, left_top=None, tolerance=0.02, attempts=5, silent=True) -> np.ndarray:
+        """
+        Writing weights into the crossbar starting from left_top
+        weights - (inputs, neurons)
+        left_top - (bl, wl) of the first cell
+        tolerance - allowable write error relative to (G_MAX - G_MIN)
+        attempts - number of cell rewrites while error > tolerance
+        return written weights (G+ - G-)/scale_w
         """
         if left_top is None:
             left_top = (0, 0)
-        if right_bottom is None:
-            right_bottom = (left_top[0]+weights[0].shape[0]+1, left_top[1]+weights.shape[1])
-        assert left_top[0] < self.device.ROW_NUM-1
-        assert left_top[1] < self.device.COL_NUM-1
-        assert right_bottom[0] < self.device.ROW_NUM-1
-        assert right_bottom[1] < self.device.COL_NUM-1
-        print(left_top)
-        print(right_bottom)
+        weights = np.asarray(weights, dtype=float)
+        assert weights.ndim == 2
+        assert left_top[0] + weights.shape[0] <= self.device.ROW_NUM
+        assert left_top[1] + 2*weights.shape[1] <= self.device.COL_NUM
+        self.layer_weights = copy.deepcopy(weights)
+        self.left_top = left_top
+        self.target_conductances = self.map_weights(weights)
+        if not silent:
+            print(f'scale_w {self.scale_w}')
+        self.device.set_mvm()
+        self.mem_conductances = np.zeros_like(self.target_conductances)
+        for i in range(self.target_conductances.shape[0]):
+            for j in range(self.target_conductances.shape[1]):
+                bl = left_top[0] + i
+                wl = left_top[1] + j
+                for _ in range(attempts):
+                    self.mem_conductances[i][j], _, _ = self.device.write_weight(bl, wl, self.target_conductances[i][j])
+                    if abs(self.mem_conductances[i][j] - self.target_conductances[i][j]) <= tolerance*(self.G_MAX - self.G_MIN):
+                        break
+                if not silent:
+                    print(f'bl {bl} wl {wl} Gt = {self.target_conductances[i][j]} Gm = {self.mem_conductances[i][j]}')
+        if self.save_folder:
+            with open(os.path.join(self.save_folder,
+                                   f'single_crossbar_weights_{self.layer_id}.pkl'),
+                                   'wb') as fp:
+                pickle.dump([self.layer_weights,
+                             self.target_conductances,
+                             self.mem_conductances,
+                             self.scale_w,
+                             self.left_top], fp)
+        return self.get_mem_weights()
+
+    def get_mem_weights(self) -> np.ndarray:
+        """
+        Weights calculated from written conductances (inputs, neurons)
+        """
+        return (self.mem_conductances[:, 0::2] - self.mem_conductances[:, 1::2]) / self.scale_w
 
     def matmul(self, input_data, **kwargs) -> np.ndarray:
         """
-        
+        Matrix multiplication in the crossbar
+        input_data - batch of inputs (samples, inputs) or single input (inputs, )
+        out_type=model - model data, otherwise memristive data
+        return (samples, neurons)
         """
+        input_data = np.asarray(input_data, dtype=float)
+        single = input_data.ndim == 1
+        input_data = np.atleast_2d(input_data)
+        assert input_data.shape[1] == self.layer_weights.shape[0]
+
+        if kwargs.get('out_type') == 'model':
+            result = input_data @ self.layer_weights
+            return result[0] if single else result
 
         # matmul results storage path
         now = datetime.datetime.now()
@@ -320,68 +393,56 @@ class SingleCrossbarMatMulLayer():
         fname_mac_result = os.path.join(self.result_dir, f'mac_{formatted_date}.csv')
         with open(fname_mac_result,'w', newline='', encoding='utf-8') as file:
             file_wr = csv.writer(file, delimiter=",")
-            file_wr.writerow(['timestemp', 'neur', 'syn', 'bl', 'wl', 'dac', 'adc', 'res', 'truth'])
+            file_wr.writerow(['timestemp', 'sample', 'neur', 'wl_plus', 'wl_minus',
+                              'xp_gp', 'xm_gp', 'xp_gm', 'xm_gm', 'scale_x', 'res', 'truth'])
 
-        # network results storage path
-        now = datetime.datetime.now()
-        formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
-        fname_io_result = os.path.join(self.result_dir, f'IO_{formatted_date}.csv')
-        with open(fname_io_result,'w', newline='', encoding='utf-8') as file:
-            file_wr = csv.writer(file, delimiter=",")
-            file_wr.writerow(['datestamp', 'outputs', 'outputs_mem'])
-
-        result_log = []
-
-        for inputs in input_data:
-            now = datetime.datetime.now()
-            formatted_date = now.strftime("%d.%m.%Y_%H.%M.%S")
-            result_log.append(formatted_date)
-            scale_x = np.max(np.abs(inputs))
-            inputs_mem = inputs
-            # autoscaling
-            inputs_mem = list(map(lambda x, n=scale_x: np.round(abs(x)/n*self.MAX_VOLTAGE*2**self.DAC_BITS/self.VOL_REF_DAC), inputs_mem))
-            neurons_model = []
+        self.device.set_mvm()
+        bl_start, wl_start = self.left_top
+        all_neurons_mem = []
+        for sample, inputs in enumerate(input_data):
+            max_input = np.max(np.abs(inputs))
+            scale_x = max_input / self.device.MAX_VOL_INFERENCE if max_input != 0 else 1
+            # place inputs on BL from left_top, voltages <= MAX_VOL_INFERENCE
+            x_plus = np.zeros(self.device.ROW_NUM)
+            x_minus = np.zeros(self.device.ROW_NUM)
+            x_plus[bl_start:bl_start+len(inputs)] = np.where(inputs > 0, inputs, 0) / scale_x
+            x_minus[bl_start:bl_start+len(inputs)] = np.where(inputs < 0, -inputs, 0) / scale_x
             neurons_mem = []
+            for neuron in range(self.layer_weights.shape[1]):
+                wl_plus = wl_start + 2*neuron
+                wl_minus = wl_plus + 1
+                xp_gp = self._dot_product(x_plus, wl_plus)
+                xm_gp = self._dot_product(x_minus, wl_plus)
+                xp_gm = self._dot_product(x_plus, wl_minus)
+                xm_gm = self._dot_product(x_minus, wl_minus)
+                mac_mem = (xp_gp - xm_gp - xp_gm + xm_gm) * scale_x / self.scale_w
+                neurons_mem.append(mac_mem)
+                with open(fname_mac_result,'a', newline='', encoding='utf-8') as file:
+                    file_wr = csv.writer(file, delimiter=",")
+                    file_wr.writerow([datetime.datetime.now().strftime("%d.%m.%Y_%H.%M.%S"),
+                                      sample,
+                                      neuron,
+                                      wl_plus,
+                                      wl_minus,
+                                      xp_gp,
+                                      xm_gp,
+                                      xp_gm,
+                                      xm_gm,
+                                      scale_x,
+                                      mac_mem,
+                                      inputs @ self.layer_weights[:, neuron]])
+            all_neurons_mem.append(neurons_mem)
+        self.device.set_wr()
+        all_neurons_mem = np.array(all_neurons_mem)
+        return all_neurons_mem[0] if single else all_neurons_mem
 
-        for i in range(self.parent.input_array_scaled.shape[0]): #100
-            # подготавливаем семпл
-            # v_dac = [0 for i in range(32)] # todo: перенести в драйвер
-            v_dac = [0 for i in range(self.parent.input_array_scaled.shape[1])]
-            for h in range(self.parent.input_array_scaled.shape[1]):
-                if self.parent.input_array_scaled[i][h] > 0.3:
-                    v_dac[h] = v2d(self.parent.parent.man.dac_bit,
-                                self.parent.parent.man.VOL_REF_DAC,
-                                0.3)
-                else:
-                    v_dac[h] = v2d(self.parent.parent.man.dac_bit,
-                                self.parent.parent.man.VOL_REF_DAC,
-                                self.parent.input_array_scaled[i][h])
-            # проходим по всем строкам кроссбара
-            for j in range(self.parent.parent.man.col_num): #8
-                if self.parent.matmul_predicted_results[i][j] < self.parent.vol_comp:
-                    # маскирование v_adc
-                    v_dac_current = deepcopy(v_dac)
-                    # наложение на v dac 8-ми разных масок
-                    print(v_dac_current)
-                    for z in range(self.parent.parent.man.row_num):
-                        if self.mask[j][z] == 0:
-                            v_dac_current[z] = 0
-                    task = {'mode_flag': 10,
-                            'vol': v_dac_current,
-                            'id': 0,
-                            'wl': j}
-                    v_adc, _ = self.parent.parent.man.conn.impact(task)
-                    #print(v_adc)
-                else:
-                    v_adc = 0
-                self.parent.matmul_crossbar_results[i][j] = a2v(self.parent.parent.man.gain,
-                                        self.parent.parent.man.adc_bit,
-                                        self.parent.parent.man.vol_ref_adc,
-                                        v_adc)
-                counter += 1
-                self.count_changed.emit(counter)
-                self.value_got.emit(v_adc)
-        self.progress_finished.emit(counter)
+    def _dot_product(self, x, wl) -> float:
+        """
+        Dot product of positive voltages vector with crossbar column, skip zero vectors
+        """
+        if not np.any(x):
+            return 0
+        return self.device.dot_product(x, wl)[0]
 
 class NPULayer():
     """
