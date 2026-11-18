@@ -261,7 +261,7 @@ class HardCore(Application):
         vol_dac = v2d(self.dac_bit, self.vol_ref_dac, vol)
         adc = self.conn.mode_7(vol_dac, 0, self.T_US, rev, 0, wl, bl)
         adc = adc[0]
-        res = a2r(self.gain, self.res_load, self.vol_read, self.adc_bit, self.vol_ref_adc, self.res_load, adc)
+        res = a2r(self.gain, self.res_load, self.vol_read, self.adc_bit, self.vol_ref_adc, self.res_switches, adc)
         return res
 
     def measure_resistance(self, bl, wl):
