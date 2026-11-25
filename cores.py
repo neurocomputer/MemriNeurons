@@ -28,6 +28,7 @@ class HardCore(Application):
     T_US = 125 # us
     MAX_SUM_CURRENT = 15 # mA
     MAX_VOL_INFERENCE = 0.3 # V
+    NEED_READ = True # The ability to disable reading in the set_mvm and set_wr functions
 
     logger = None
 
@@ -47,14 +48,16 @@ class HardCore(Application):
         Switch to write-read mode
         """
         self._contour = "wr"
-        self.read_raw_weights()
+        if self.NEED_READ:
+            self.read_raw_weights()
 
     def set_mvm(self):
         """
         Switch to matrix-vector multiplication mode
         """
         self._contour = "mvm"
-        self.read_raw_weights()
+        if self.NEED_READ:
+            self.read_raw_weights()
 
     def update_logger(self):
         """
